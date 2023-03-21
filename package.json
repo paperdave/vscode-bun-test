@@ -1,0 +1,43 @@
+{
+  "name": "bun-test",
+  "displayName": "Bun Test",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.76.0"
+  },
+  "main": "./out/extension.js",
+  "publisher": "paperdave",
+  "enabledApiProposals": [
+    "testCoverage",
+    "testContinuousRun"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/*{_,.}{test,spec}.{js,ts,jsx,tsx}"
+  ],
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.7",
+    "@typescript-eslint/eslint-plugin": "^5.42.0",
+    "@typescript-eslint/parser": "^5.42.0",
+    "eslint": "^8.26.0",
+    "typescript": "^5.0.2",
+    "vscode-dts": "^0.3.3"
+  },
+  "dependencies": {
+    "@types/escodegen": "^0.0.7",
+    "acorn": "^8.8.2",
+    "acorn-walk": "^8.2.0",
+    "escodegen": "^2.0.0"
+  }
+}
