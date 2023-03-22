@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { testData, TestFile } from "./testTree";
+import { TestCase, testData, TestFile } from "./testTree";
 
 export async function activate(context: vscode.ExtensionContext) {
   const ctrl = vscode.tests.createTestController("bunTestController", "Bun");
@@ -24,7 +24,7 @@ export async function activate(context: vscode.ExtensionContext) {
         }
 
         const data = testData.get(test);
-        if (data instanceof null) {
+        if (data instanceof TestCase) {
           run.enqueued(test);
           queue.push({ test, data });
         } else {
