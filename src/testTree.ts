@@ -56,6 +56,7 @@ export class TestFile {
     content: string,
     item: vscode.TestItem
   ) {
+    console.log("OwO");
     const root = parse(content, {
       ecmaVersion: "latest",
       sourceType: "module",

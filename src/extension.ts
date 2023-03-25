@@ -93,7 +93,7 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    if (!e.uri.path.endsWith(".md")) {
+    if (!e.uri.path.match(/.*(?:_|\.)(?:test|spec)\.(?:js|ts|jsx|tsx)$/)) {
       return;
     }
 

@@ -1,7 +1,6 @@
 const { tests, files } = JSON.parse(process.env.BUN_VSCODE_TEST_DATA);
-console.log(tests, files);
 Bun.plugin({
-  name: "test-fuckery",
+  name: "bun-test-interception",
   setup(builder) {
     builder.onResolve(
       { filter: /./, namespace: "vscode-bun-test" },
@@ -17,7 +16,6 @@ Bun.plugin({
         let stack = [];
 
         function describe(name, cb) {
-          console.log("hm", stack, name);
           let filtered = tests.filter((x) => x.length > stack.length);
           if (
             filtered.length === 0 ||
