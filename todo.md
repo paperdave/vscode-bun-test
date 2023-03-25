@@ -1,0 +1,2 @@
+- fix hardcoded path
+- fix removing removed tests

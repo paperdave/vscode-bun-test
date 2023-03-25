@@ -35,9 +35,11 @@
     "vscode-dts": "^0.3.3"
   },
   "dependencies": {
+    "@paperdave/utils": "^1.6.1",
     "@types/escodegen": "^0.0.7",
     "acorn": "^8.8.2",
     "acorn-walk": "^8.2.0",
-    "escodegen": "^2.0.0"
+    "escodegen": "^2.0.0",
+    "strip-ansi": "6"
   }
 }

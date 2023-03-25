@@ -1,3 +1,4 @@
+import { debounce } from "@paperdave/utils";
 import * as vscode from "vscode";
 import { TestCase, testData, TestFile } from "./testTree";
 
@@ -107,8 +108,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument(updateNodeForDocument),
-    vscode.workspace.onDidChangeTextDocument((e) =>
-      updateNodeForDocument(e.document)
+    vscode.workspace.onDidChangeTextDocument(
+      debounce((e) => updateNodeForDocument(e.document), 250)
     )
   );
 }

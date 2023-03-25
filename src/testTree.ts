@@ -4,11 +4,11 @@ import { TextDecoder } from "util";
 import * as vscode from "vscode";
 import * as walk from "acorn-walk";
 import { generate } from "escodegen";
-import path = require("path");
-import { spawn, spawnSync } from "child_process";
-import { writeFileSync } from "fs";
+import * as path from "path";
+import { spawn } from "child_process";
 import { rm, writeFile } from "fs/promises";
 import { performance } from "perf_hooks";
+import stripAnsi = require("strip-ansi");
 
 function labelNodeToString(node: any) {
   return node.type === "Literal" ? node.value : generate(node);
@@ -19,6 +19,46 @@ const textDecoder = new TextDecoder("utf-8");
 export type BunTestData = TestFile | TestCase;
 
 export const testData = new WeakMap<vscode.TestItem, BunTestData>();
+
+function offsetsToRange(
+  text: string,
+  offset1: number,
+  offset2: number
+): vscode.Range {
+  const lines = text.split("\n");
+  let startLineNum = 0;
+  let endLineNum = 0;
+  let startCharNum = offset1;
+  let endCharNum = offset2;
+
+  while (
+    startCharNum >= lines[startLineNum].length &&
+    startLineNum < lines.length - 1
+  ) {
+    startCharNum -= lines[startLineNum].length + 1;
+    startLineNum++;
+  }
+
+  while (
+    endCharNum >= lines[endLineNum].length &&
+    endLineNum < lines.length - 1
+  ) {
+    endCharNum -= lines[endLineNum].length + 1;
+    endLineNum++;
+  }
+
+  if (
+    startLineNum > endLineNum ||
+    (startLineNum === endLineNum && startCharNum > endCharNum)
+  ) {
+    throw new Error();
+  }
+
+  const startPosition = new vscode.Position(startLineNum, 0);
+  const endPosition = new vscode.Position(endLineNum, 0);
+
+  return new vscode.Range(startPosition, endPosition);
+}
 
 export const getContentFromFilesystem = async (uri: vscode.Uri) => {
   try {
@@ -56,11 +96,19 @@ export class TestFile {
     content: string,
     item: vscode.TestItem
   ) {
-    console.log("OwO");
     const root = parse(content, {
       ecmaVersion: "latest",
       sourceType: "module",
     });
+    const editedContent = content
+      .replace(
+        /from\s*"bun:test"/g,
+        'from "vscode-bun-test:' + (item.uri?.fsPath ?? item.uri?.path) + '"'
+      )
+      .replace(
+        /from\s*'bun:test'/g,
+        "from 'vscode-bun-test:" + (item.uri?.fsPath ?? item.uri?.path) + "'"
+      );
     let namespace = null;
     const vars: any = {
       describe: null,
@@ -84,8 +132,6 @@ export class TestFile {
             namespace = specifier.local.name;
           }
         }
-        node.source.value =
-          "vscode-bun-test:" + (item.uri?.fsPath ?? item.uri?.path);
       },
       CallExpression(node: any, ancestors: any[]) {
         if (
@@ -101,10 +147,10 @@ export class TestFile {
                 ancestor.callee.type === "Identifier" &&
                 ancestor.callee.name === vars.describe
             )
-            .map((x) => labelNodeToString(x.arguments[0]));
+            .map((x) => [labelNodeToString(x.arguments[0]), x]);
 
           if (node.callee.name !== vars.describe) {
-            describeList.push(name);
+            describeList.push([name, node]);
           }
 
           let parent = item;
@@ -112,15 +158,24 @@ export class TestFile {
             const id = describeList.slice(0, i + 1).join(" / ");
             let test = describes[id];
             if (!test) {
-              test = controller.createTestItem(id, describeList[i]);
+              test = controller.createTestItem(
+                id,
+                describeList[i][0],
+                item.uri
+              );
+              test.range = offsetsToRange(
+                content,
+                describeList[i][1].start,
+                describeList[i][1].end
+              );
               parent.children.add(test);
               describes[id] = test;
               testData.set(
                 test,
                 new TestCase(
                   item.uri!.fsPath,
-                  describeList.slice(0, i + 1),
-                  root
+                  describeList.slice(0, i + 1).map((x) => x[0]),
+                  editedContent
                 )
               );
             }
@@ -133,8 +188,46 @@ export class TestFile {
   }
 }
 
+interface ErrorMetadata {
+  type: string;
+  message: string;
+  line: number;
+  col: number;
+}
+
+function escapeRegExp(string: string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
+}
+
+function parseErrors(outputLog: string, file: string): ErrorMetadata[] {
+  const errors: ErrorMetadata[] = [];
+
+  const regex = new RegExp(
+    `(?:^\\s*\\^\\s*$\\n)?(\\w+): (.*)\\n(?:^\\s*\\^\\s*$\\n)?\\s*at ${escapeRegExp(
+      file
+    )}:(\\d+):(\\d+)`,
+    "gm"
+  );
+  const matches = outputLog.matchAll(regex);
+
+  for (const match of matches) {
+    const [, errorType, message, line, col] = match;
+    errors.push({
+      type: errorType,
+      message,
+      line: parseInt(line),
+      col: parseInt(col),
+    });
+  }
+
+  return errors;
+}
 export class TestCase {
-  constructor(public file: string, public path: string[], public root: Node) {}
+  constructor(
+    public file: string,
+    public path: string[],
+    public fileContent: string
+  ) {}
 
   getLabel() {
     return `fasdsdfa`;
@@ -143,15 +236,11 @@ export class TestCase {
   async run(test: vscode.TestItem, run: vscode.TestRun) {
     return new Promise<void>(async (done, err) => {
       const dir = path.dirname(this.file);
-      const tempFile = path.join(
-        dir,
-        `${Date.now()}_${path.basename(this.file)}`
-      );
-      await writeFile(tempFile, generate(this.root));
-      console.log("owo", tempFile);
+      const tempFile = path.join(dir, `${Date.now()}_temp_bun_vscode.ts`);
+      await writeFile(tempFile, this.fileContent);
       const proc = spawn(
         "bun",
-        ["test", "/code/paperdave/vscode-bun-test/src/runner.test.js"],
+        ["test", "/code/paperdave/vscode-bun-test/runner.test.js"],
         {
           stdio: "pipe",
           env: {
@@ -162,7 +251,7 @@ export class TestCase {
             }),
             FORCE_COLOR: "1",
           },
-          cwd: "/code/paperdave/vscode-bun-test/src/",
+          cwd: "/code/paperdave/vscode-bun-test",
         }
       );
       let currentLog = "";
@@ -211,24 +300,41 @@ export class TestCase {
             const t =
               sub.length === 0 ? test : findChildTest(test.children, sub);
 
+            currentLog = currentLog
+              .replace(/"vscode-bun-test:.*?"/g, '"bun:test"')
+              .replace(/'vscode-bun-test:.*?'/g, "'bun:test'")
+              .replace(tempFile, test.uri!.fsPath);
+
+            run.appendOutput(currentLog, undefined, t);
+
             const state = line[9] === "✓" ? "passed" : "failed";
-            console.log(parts, state, t);
             if (state === "passed") {
               run.passed(t, time);
             } else {
-              run.failed(t, [], time);
+              run.failed(
+                t,
+                parseErrors(stripAnsi(currentLog), test.uri!.fsPath).map(
+                  (x) => {
+                    return {
+                      message: `${x.type}: ${x.message}`,
+                      location: new vscode.Location(
+                        test.uri!,
+                        new vscode.Position(x.line - 1, x.col)
+                      ),
+                    };
+                  }
+                ),
+                time
+              );
             }
+            currentLog = "";
           } else {
             currentLog += line + "\n";
           }
         }
-        console.log({ lines });
       });
       proc.on("exit", (status) => {
         rm(tempFile);
-        if (status !== 0) {
-          run.failed(test, [{ message: "status code " + status }]);
-        }
         run.end();
         done();
       });

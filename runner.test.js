@@ -1,4 +1,6 @@
-const { tests, files } = JSON.parse(process.env.BUN_VSCODE_TEST_DATA);
+const { tests, files } = JSON.parse(
+  process.env[String("BUN_VSCODE_TEST_DATA")]
+);
 Bun.plugin({
   name: "bun-test-interception",
   setup(builder) {
